@@ -15,6 +15,15 @@ Written by Limor Fried/Ladyada  for Adafruit Industries.
 BSD license, check license.txt for more information
 All text above, and the splash screen must be included in any redistribution
 *********************************************************************/
+
+/*
+ * Reworked by Gavin Hurlbut <gjhurlbu@gmail.com> to use an attached SPI FRAM
+ * for buffer storage, default to 128x64 display, I2C only
+ *
+ * changes (c) 2016 Gavin Hurlbut <gjhurlbu@gmail.com>
+ * released under the BSD License
+ */
+
 #ifndef _Adafruit_SSD1306_H_
 #define _Adafruit_SSD1306_H_
 
@@ -26,27 +35,8 @@ All text above, and the splash screen must be included in any redistribution
   #define WIRE_WRITE Wire.send
 #endif
 
-#if defined(__SAM3X8E__)
- typedef volatile RwReg PortReg;
- typedef uint32_t PortMask;
- #define HAVE_PORTREG
-#elif defined(ARDUINO_ARCH_SAMD)
-// not supported
-#elif defined(ESP8266) || defined(ESP32) || defined(ARDUINO_STM32_FEATHER) || defined(__arc__)
-  typedef volatile uint32_t PortReg;
-  typedef uint32_t PortMask;
-#elif defined(__AVR__)
-  typedef volatile uint8_t PortReg;
-  typedef uint8_t PortMask;
-  #define HAVE_PORTREG
-#else
-  // chances are its 32 bit so assume that
-  typedef volatile uint32_t PortReg;
-  typedef uint32_t PortMask;
-#endif
-
-#include <SPI.h>
 #include <Adafruit_GFX.h>
+#include <Adafruit_FRAM_SPI.h>
 
 #define BLACK 0
 #define WHITE 1
@@ -94,6 +84,11 @@ All text above, and the splash screen must be included in any redistribution
   #define SSD1306_LCDWIDTH                  96
   #define SSD1306_LCDHEIGHT                 16
 #endif
+
+#define SSD1306_BUFFER_SIZE SSD1306_LCDWIDTH
+#define SSD1306_RAM_MIRROR_SIZE (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8)
+
+#define SSD1306_PIXEL_ADDR(x, y) ((x) + ((y) / 8) * SSD1306_LCDWIDTH)
 
 #define SSD1306_SETCONTRAST 0x81
 #define SSD1306_DISPLAYALLON_RESUME 0xA4
@@ -143,12 +138,11 @@ All text above, and the splash screen must be included in any redistribution
 
 class Adafruit_SSD1306 : public Adafruit_GFX {
  public:
-  Adafruit_SSD1306(int8_t SID, int8_t SCLK, int8_t DC, int8_t RST, int8_t CS);
-  Adafruit_SSD1306(int8_t DC, int8_t RST, int8_t CS);
-  Adafruit_SSD1306(int8_t RST = -1);
+  Adafruit_SSD1306(uint8_t i2caddr = SSD1306_I2C_ADDRESS);
 
-  void begin(uint8_t switchvcc = SSD1306_SWITCHCAPVCC, uint8_t i2caddr = SSD1306_I2C_ADDRESS, bool reset=true);
-  void ssd1306_command(uint8_t c);
+  void begin(uint8_t switchvcc = SSD1306_SWITCHCAPVCC);
+  void attachRAM(Adafruit_FRAM_SPI *fram, uint16_t buffer, uint16_t logo);
+  void initializeLogo(void);
 
   void clearDisplay(void);
   void invertDisplay(uint8_t i);
@@ -169,18 +163,20 @@ class Adafruit_SSD1306 : public Adafruit_GFX {
   virtual void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color);
 
  private:
-  int8_t _i2caddr, _vccstate, sid, sclk, dc, rst, cs;
-  void fastSPIwrite(uint8_t c);
-
-  boolean hwSPI;
-#ifdef HAVE_PORTREG
-  PortReg *mosiport, *clkport, *csport, *dcport;
-  PortMask mosipinmask, clkpinmask, cspinmask, dcpinmask;
-#endif
-
   inline void drawFastVLineInternal(int16_t x, int16_t y, int16_t h, uint16_t color) __attribute__((always_inline));
   inline void drawFastHLineInternal(int16_t x, int16_t y, int16_t w, uint16_t color) __attribute__((always_inline));
 
+  void ssd1306_command(uint8_t c);
+
+  int8_t m_i2caddr;
+  int8_t m_vccstate;
+
+  Adafruit_FRAM_SPI *m_fram;
+  uint16_t m_buffer_addr;
+  uint16_t m_logo_addr;
+  bool m_show_logo;
+
+  uint8_t m_buffer[SSD1306_BUFFER_SIZE];
 };
 
 #endif /* _Adafruit_SSD1306_H_ */
