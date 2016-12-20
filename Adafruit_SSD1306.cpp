@@ -678,6 +678,6 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h
         break;
     }
 
-    m_fram->write8(addr);
+    m_fram->write8(addr, data);
   }
 }
