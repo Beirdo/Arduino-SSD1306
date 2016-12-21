@@ -60,7 +60,7 @@ All text above, and the splash screen must be included in any redistribution
     SSD1306_96_16
 
     -----------------------------------------------------------------------*/
-   #define SSD1306_128_64
+#define SSD1306_128_64
 //   #define SSD1306_128_32
 //   #define SSD1306_96_16
 /*=========================================================================*/
@@ -89,6 +89,7 @@ All text above, and the splash screen must be included in any redistribution
 #define SSD1306_RAM_MIRROR_SIZE (SSD1306_LCDWIDTH * SSD1306_LCDHEIGHT / 8)
 
 #define SSD1306_PIXEL_ADDR(x, y) ((x) + ((y) / 8) * SSD1306_LCDWIDTH)
+#define SSD1306_PAGE_BIT(y)	 (1 << ((y) >> 3))
 
 #define SSD1306_SETCONTRAST 0x81
 #define SSD1306_DISPLAYALLON_RESUME 0xA4
@@ -168,6 +169,10 @@ class Adafruit_SSD1306 : public Adafruit_GFX {
 
   void ssd1306_command(uint8_t c);
 
+  void getCacheLine(uint16_t x, uint16_t y);
+  void getCacheLine(uint16_t addr, bool is_logo);
+  void flushCacheLine(void);
+
   int8_t m_i2caddr;
   int8_t m_vccstate;
 
@@ -177,6 +182,9 @@ class Adafruit_SSD1306 : public Adafruit_GFX {
   bool m_show_logo;
 
   uint8_t m_buffer[SSD1306_BUFFER_SIZE];
+  uint8_t m_pages_empty;
+  bool m_cache_clean;
+  uint16_t m_cache_address;
 };
 
 #endif /* _Adafruit_SSD1306_H_ */

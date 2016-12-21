@@ -138,6 +138,41 @@ void Adafruit_SSD1306::attachRAM(Adafruit_FRAM_SPI *fram, uint16_t buffer,
   m_buffer_addr = buffer;
   m_logo_addr = logo;
   m_show_logo = true;
+  m_pages_empty = 0;
+  m_cache_clean = true;
+  m_cache_address = 0xFFFF;
+}
+
+void Adafruit_SSD1306::getCacheLine(uint16_t x, uint16_t y)
+{
+  uint16_t addr = SSD1306_PIXEL_ADDR(x, y);
+  if (addr == m_cache_address) {
+    return;
+  }
+
+  if (!m_cache_clean) {
+    flushCacheLine();
+  }
+  
+  getCacheLine(addr, false);
+}
+
+void Adafruit_SSD1306::getCacheLine(uint16_t addr, bool is_logo)
+{
+  uint16_t baseAddr = (is_logo ? m_logo_addr : m_buffer_addr);
+
+  m_fram.read(baseAddr + addr, m_buffer, SSD1306_BUFFER_SIZE);
+  m_cache_address = addr;
+  m_cache_clean = true;
+}
+
+void Adafruit_SSD1306::flushCacheLine(void)
+{
+  if (m_show_logo) {
+    return;
+  }
+  m_fram.write(m_cache_address + m_buffer_addr, m_buffer, SSD1306_BUFFER_SIZE);
+  m_cache_clean = true;
 }
 
 // the most basic function, set a single pixel
@@ -162,8 +197,8 @@ void Adafruit_SSD1306::drawPixel(int16_t x, int16_t y, uint16_t color) {
   }
 
   // x is which column
-  uint16_t addr = m_buffer_addr + SSD1306_PIXEL_ADDR(x, y);
-  uint8_t data = m_fram->read8(addr);
+  getCacheLine(x, y);
+  uint8_t data = m_buffer[x];
   uint8_t mask = (1 << (y & 0x07));
   
   switch (color)
@@ -180,7 +215,7 @@ void Adafruit_SSD1306::drawPixel(int16_t x, int16_t y, uint16_t color) {
     default:
       return;
   }
-  m_fram->write8(addr, data);
+  m_buffer[x] = data;
 }
 
 Adafruit_SSD1306::Adafruit_SSD1306(uint8_t i2caddr) :
@@ -387,18 +422,24 @@ void Adafruit_SSD1306::display(void) {
   ssd1306_command(1); // Page end address
 #endif
 
-  uint16_t ram_buffer = (m_show_logo ? m_logo_addr : m_buffer_addr);
   Wire.setClock(400000);
 
-  for (uint16_t i = 0; i < SSD1306_RAM_MIRROR_SIZE; ) {
-    m_fram->read(ram_buffer + i, m_buffer, SSD1306_BUFFER_SIZE);
+  if (!m_cache_clean) {
+    flushCacheLine();
+  }
 
-    for (uint8_t j = 0; j < SSD1306_BUFFER_SIZE; j += 16 ) {
+  for (uint16_t y = 0; y < SSD1306_LCDHEIGHT; y += 8) {
+    bool empty = !(!(m_pages_empty & SSD1306_PAGE_BIT(y)));
+    if (!empty) {
+      getCacheLine(i, m_show_logo);
+    }
+
+    for (uint8_t x = 0; x < SSD1306_BUFFER_SIZE; x += 16) {
       // send a bunch of data in one transmission
       Wire.beginTransmission(m_i2caddr);
       WIRE_WRITE(0x40);
-      for (uint8_t x = 0; x < 16; x++) {
-        WIRE_WRITE(m_buffer[i++]);
+      for (uint8_t i = 0; i < 16; i++) {
+        WIRE_WRITE(empty ? 0x00 : m_buffer[x + i]);
       }
       Wire.endTransmission();
     }
@@ -411,11 +452,9 @@ void Adafruit_SSD1306::display(void) {
 
 // clear everything
 void Adafruit_SSD1306::clearDisplay(void) {
-  memset(m_buffer, 0x00, SSD1306_BUFFER_SIZE);
-
-  for (uint16_t i = 0; i < SSD1306_RAM_MIRROR_SIZE; i += SSD1306_BUFFER_SIZE) {
-    m_fram->write(m_buffer_addr + i, m_buffer, SSD1306_BUFFER_SIZE);
-  }
+  m_pages_empty = 0xFF;
+  m_cache_clean = true;
+  m_cache_address = 0xFFFF;
 }
 
 void Adafruit_SSD1306::drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) {
@@ -474,17 +513,14 @@ void Adafruit_SSD1306::drawFastHLineInternal(int16_t x, int16_t y, int16_t w, ui
     return;
   }
 
-  // set up the pointer for movement through the buffer
-  uint16_t addr = m_buffer_addr + SSD1306_PIXEL_ADDR(x, y);
+  getCacheLine(x, y);
   register uint8_t mask = 1 << (y & 0x07);
-
-  m_fram->read(addr, m_buffer, w);
 
   if (color == BLACK) {
     mask = ~mask;
   }
 
-  for (uint8_t i = 0; i < w; i++) {
+  for (uint8_t i = x; i < x + w; i++) {
     switch (color)
     {
       case WHITE:
@@ -500,8 +536,6 @@ void Adafruit_SSD1306::drawFastHLineInternal(int16_t x, int16_t y, int16_t w, ui
         return;
     }
   }
-
-  m_fram->write(addr, m_buffer, w);
 }
 
 void Adafruit_SSD1306::drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) {
@@ -567,9 +601,6 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h
   register uint8_t y = __y;
   register uint8_t h = __h;
 
-  // set up the pointer for fast movement through the buffer
-  register uint16_t addr = m_buffer_addr + SSD1306_PIXEL_ADDR(x, y);
-
   // do the first partial byte, if necessary - this requires some masking
   register uint8_t mod = (y & 0x07);
   register uint8_t data;
@@ -584,12 +615,14 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h
                                  0xFE };
     register uint8_t mask = premask[mod];
 
+    getCacheLine(x, y);
+
     // adjust the mask if we're not going to reach the end of this byte
     if (h < mod) {
       mask &= (0xFF >> (mod-h));
     }
 
-    data = m_fram->read8(addr);
+    data = m_buffer[x];
 
     switch (color)
     {
@@ -606,7 +639,7 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h
         return;
     }
 
-    m_fram->write8(addr, data);
+    m_buffer[x] = data;
 
     // fast exit if we're done here!
     if (h < mod) {
@@ -614,8 +647,7 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h
     }
 
     h -= mod;
-
-    addr += SSD1306_LCDWIDTH;
+    y += mod;
   }
 
   // write solid bytes while we can - effectively doing 8 rows at a time
@@ -624,15 +656,14 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h
       // separate copy of the code so we don't impact performance of the
       // black/white write version with an extra comparison per loop
       do {
-        data = m_fram->read8(addr);
-        m_fram->write8(addr, ~data);
-
-        // adjust the buffer forward 8 rows worth of data
-        addr += SSD1306_LCDWIDTH;
+        getCacheLine(x, y);
+        data = m_buffer[x];
+        m_buffer[x] = ~data;
 
         // adjust h & y (there's got to be a faster way for me to do this, but
         // this should still help a fair bit for now)
         h -= 8;
+        y += 8;
       } while (h >= 8);
     } else {
       // store a local value to work with
@@ -640,14 +671,13 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h
 
       do  {
         // write our value in
-        m_fram->write8(addr, data);
-
-        // adjust the buffer forward 8 rows worth of data
-        addr += SSD1306_LCDWIDTH;
+        getCacheLine(x, y);
+        m_buffer[x] = data;
 
         // adjust h & y (there's got to be a faster way for me to do this, but
         // this should still help a fair bit for now)
         h -= 8;
+        y += 8;
       } while (h >= 8);
     }
   }
@@ -664,7 +694,8 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h
                                   0x7F};
     register uint8_t mask = postmask[mod];
 
-    data = m_fram->read8(addr);
+    getCacheLine(x, y);
+    data = m_buffer[x];
     switch (color)
     {
       case WHITE:
@@ -677,7 +708,6 @@ void Adafruit_SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h
         data ^=  mask;
         break;
     }
-
-    m_fram->write8(addr, data);
+    m_buffer[x] = data;
   }
 }
