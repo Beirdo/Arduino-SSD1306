@@ -169,8 +169,8 @@ class Adafruit_SSD1306 : public Adafruit_GFX {
 
   void ssd1306_command(uint8_t c);
 
-  void getCacheLine(uint16_t x, uint16_t y);
-  void getCacheLine(uint16_t addr, bool is_logo);
+  void getCacheLine(int16_t x, int16_t y);
+  void getCacheLine(int16_t addr, bool is_logo);
   void flushCacheLine(void);
 
   int8_t m_i2caddr;

@@ -143,7 +143,7 @@ void Adafruit_SSD1306::attachRAM(Adafruit_FRAM_SPI *fram, uint16_t buffer,
   m_cache_address = 0xFFFF;
 }
 
-void Adafruit_SSD1306::getCacheLine(uint16_t x, uint16_t y)
+void Adafruit_SSD1306::getCacheLine(int16_t x, int16_t y)
 {
   uint16_t addr = SSD1306_PIXEL_ADDR(x, y);
   if (addr == m_cache_address) {
@@ -157,11 +157,11 @@ void Adafruit_SSD1306::getCacheLine(uint16_t x, uint16_t y)
   getCacheLine(addr, false);
 }
 
-void Adafruit_SSD1306::getCacheLine(uint16_t addr, bool is_logo)
+void Adafruit_SSD1306::getCacheLine(int16_t addr, bool is_logo)
 {
   uint16_t baseAddr = (is_logo ? m_logo_addr : m_buffer_addr);
 
-  m_fram.read(baseAddr + addr, m_buffer, SSD1306_BUFFER_SIZE);
+  m_fram->read(baseAddr + addr, m_buffer, SSD1306_BUFFER_SIZE);
   m_cache_address = addr;
   m_cache_clean = true;
 }
@@ -171,7 +171,7 @@ void Adafruit_SSD1306::flushCacheLine(void)
   if (m_show_logo) {
     return;
   }
-  m_fram.write(m_cache_address + m_buffer_addr, m_buffer, SSD1306_BUFFER_SIZE);
+  m_fram->write(m_cache_address + m_buffer_addr, m_buffer, SSD1306_BUFFER_SIZE);
   m_cache_clean = true;
 }
 
@@ -428,10 +428,10 @@ void Adafruit_SSD1306::display(void) {
     flushCacheLine();
   }
 
-  for (uint16_t y = 0; y < SSD1306_LCDHEIGHT; y += 8) {
+  for (int16_t y = 0; y < SSD1306_LCDHEIGHT; y += 8) {
     bool empty = !(!(m_pages_empty & SSD1306_PAGE_BIT(y)));
     if (!empty) {
-      getCacheLine(i, m_show_logo);
+      getCacheLine(y, m_show_logo);
     }
 
     for (uint8_t x = 0; x < SSD1306_BUFFER_SIZE; x += 16) {
