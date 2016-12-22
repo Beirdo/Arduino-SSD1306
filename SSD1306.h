@@ -24,8 +24,8 @@ All text above, and the splash screen must be included in any redistribution
  * released under the BSD License
  */
 
-#ifndef _Adafruit_SSD1306_H_
-#define _Adafruit_SSD1306_H_
+#ifndef _SSD1306_H_
+#define _SSD1306_H_
 
 #if ARDUINO >= 100
  #include "Arduino.h"
@@ -42,7 +42,7 @@ All text above, and the splash screen must be included in any redistribution
 #define WHITE 1
 #define INVERSE 2
 
-#define SSD1306_I2C_ADDRESS   0x3D  // 011110+SA0+RW - 0x3C or 0x3D
+#define SSD1306_I2C_ADDRESS   0x3C  // 011110+SA0+RW - 0x3C or 0x3D
 // Address for 128x32 is 0x3C
 // Address for 128x64 is 0x3D (default) or 0x3C (if SA0 is grounded)
 
@@ -137,9 +137,9 @@ All text above, and the splash screen must be included in any redistribution
 #define SSD1306_VERTICAL_AND_RIGHT_HORIZONTAL_SCROLL 0x29
 #define SSD1306_VERTICAL_AND_LEFT_HORIZONTAL_SCROLL 0x2A
 
-class Adafruit_SSD1306 : public Adafruit_GFX {
+class SSD1306 : public Adafruit_GFX {
  public:
-  Adafruit_SSD1306(uint8_t i2caddr = SSD1306_I2C_ADDRESS);
+  SSD1306(uint8_t i2caddr = SSD1306_I2C_ADDRESS);
 
   void begin(uint8_t switchvcc = SSD1306_SWITCHCAPVCC);
   void attachRAM(Adafruit_FRAM_SPI *fram, uint16_t buffer, uint16_t logo);
@@ -187,4 +187,4 @@ class Adafruit_SSD1306 : public Adafruit_GFX {
   uint16_t m_cache_address;
 };
 
-#endif /* _Adafruit_SSD1306_H_ */
+#endif /* _SSD1306_H_ */
