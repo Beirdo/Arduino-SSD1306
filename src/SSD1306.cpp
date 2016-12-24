@@ -163,6 +163,7 @@ void SSD1306::attachRAM(Adafruit_FRAM_SPI *fram, uint16_t buffer,
 void SSD1306::getCacheLine(int16_t x, int16_t y)
 {
   (void)x;
+  y &= 0xFFF0;
   uint16_t addr = SSD1306_PIXEL_ADDR(0, y);
   if (!m_show_logo) {
     if (addr == m_cache_address) {
@@ -181,12 +182,20 @@ void SSD1306::getCacheLine(int16_t x, int16_t y)
   Serial.println(baseAddr + addr, HEX);
 #endif
 
-  bool empty = !(!(m_pages_empty & SSD1306_PAGE_BIT(y)));
+  bool empty1 = !(!(m_pages_empty & SSD1306_PAGE_BIT(y)));
+  bool empty2 = !(!(m_pages_empty & SSD1306_PAGE_BIT(y + 8)));
 
-  if (!empty) {
+  if (!empty1) {
     m_fram->read(baseAddr + addr, m_buffer, SSD1306_BUFFER_SIZE);
   } else {
     memset(m_buffer, 0x00, SSD1306_BUFFER_SIZE);
+  }
+
+  if (!empty2) {
+    m_fram->read(baseAddr + addr + SSD1306_BUFFER_SIZE,
+                 &m_buffer[SSD1306_BUFFER_SIZE], SSD1306_BUFFER_SIZE);
+  } else {
+    memset(&m_buffer[SSD1306_BUFFER_SIZE], 0x00, SSD1306_BUFFER_SIZE);
   }
 
 #if 0
@@ -214,7 +223,8 @@ void SSD1306::flushCacheLine(void)
 #endif
 
   m_fram->writeEnable(true);
-  m_fram->write(m_buffer_addr + m_cache_address, m_buffer, SSD1306_BUFFER_SIZE);
+  m_fram->write(m_buffer_addr + m_cache_address, m_buffer, 
+                2 * SSD1306_BUFFER_SIZE);
 #if 0
   for (uint8_t i = 0; i < SSD1306_BUFFER_SIZE; i++) {
     Serial.print(m_buffer[i], HEX);
@@ -251,7 +261,7 @@ void SSD1306::drawPixel(int16_t x, int16_t y, uint16_t color) {
 
   // x is which column
   getCacheLine(x, y);
-  uint8_t data = m_buffer[x];
+  uint8_t data = m_buffer[SSD1306_PIXEL_ADDR(x, y)];
   uint8_t mask = (1 << (y & 0x07));
   
 #if 0
@@ -282,7 +292,7 @@ void SSD1306::drawPixel(int16_t x, int16_t y, uint16_t color) {
     default:
       return;
   }
-  m_buffer[x] = data;
+  m_buffer[SSD1306_BUFFER_ADDR(x, y)] = data;
 #if 0
   Serial.print(" data: ");
   Serial.println(data, HEX);
@@ -515,7 +525,8 @@ void SSD1306::display(void) {
       Wire.beginTransmission(m_i2caddr);
       Wire.write(0x40);
       for (uint8_t i = 0; i < 16; i++) {
-	uint8_t data = (empty ? 0x00 : m_buffer[x + i]);
+	uint8_t data = (empty ? 0x00 :
+	                m_buffer[SSD1306_BUFFER_ADDR(x + i, y)]);
 #if 0
 	Serial.print(data, HEX);
 	Serial.print(" ");
@@ -624,22 +635,28 @@ void SSD1306::drawFastHLineInternal(int16_t x, int16_t y, int16_t w, uint16_t co
     Serial.print("i :");
     Serial.print(i, DEC);
     Serial.print(" before: ");
-    Serial.print(m_buffer[i], HEX);
+    Serial.print(m_buffer[SSD1306_BUFFER_ADDR(i, y)], HEX);
 #endif
+
+    uint8_t data = m_buffer[SSD1306_BUFFER_ADDR(i, y)];
+
     switch (color)
     {
       case WHITE:
-        m_buffer[i] |= mask;
+        data |= mask;
         break;
       case BLACK:
-        m_buffer[i] &= mask;
+        data &= mask;
         break;
       case INVERSE:
-        m_buffer[i] ^= mask;
+        data ^= mask;
         break;
       default:
         return;
     }
+
+    m_buffer[SSD1306_BUFFER_ADDR(i, y)] = data;
+
 #if 0
     Serial.print(" after: ");
     Serial.println(m_buffer[i], HEX);
@@ -749,7 +766,7 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
     Serial.print(color, DEC);
 #endif
 
-    data = m_buffer[x];
+    data = m_buffer[SSD1306_BUFFER_ADDR(x, y)];
 
 #if 0
     Serial.print(" before: ");
@@ -776,7 +793,7 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
     Serial.println(data, HEX);
 #endif
 
-    m_buffer[x] = data;
+    m_buffer[SSD1306_BUFFER_ADDR(x, y)] = data;
     m_cache_clean = false;
     m_pages_empty &= ~SSD1306_PAGE_BIT(y);
 
@@ -796,8 +813,8 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
       // black/white write version with an extra comparison per loop
       do {
         getCacheLine(x, y);
-        data = m_buffer[x];
-        m_buffer[x] = ~data;
+        data = m_buffer[SSD1306_BUFFER_ADDR(x, y)];
+        m_buffer[SSD1306_BUFFER_ADDR(x, y)] = ~data;
 
         // adjust h & y (there's got to be a faster way for me to do this, but
         // this should still help a fair bit for now)
@@ -823,14 +840,14 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
         Serial.print(" color: ");
         Serial.print(color, DEC);
         Serial.print(" before: ");
-        Serial.print(m_buffer[x], HEX);
+        Serial.print(m_buffer[SSD1306_BUFFER_ADDR(x, y)], HEX);
 #endif
 
-        m_buffer[x] = data;
+        m_buffer[SSD1306_BUFFER_ADDR(x, y)] = data;
 
 #if 0
         Serial.print(" after: ");
-        Serial.println(m_buffer[x], HEX);
+        Serial.println(m_buffer[SSD1306_BUFFER_ADDR(x, y)], HEX);
 #endif
 
         m_cache_clean = false;
@@ -874,7 +891,7 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
     Serial.print(color, DEC);
 #endif
 
-    data = m_buffer[x];
+    data = m_buffer[SSD1306_BUFFER_ADDR(x, y)];
 
 #if 0
     Serial.print(" before: ");
@@ -893,7 +910,7 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
         data ^=  mask;
         break;
     }
-    m_buffer[x] = data;
+    m_buffer[SSD1306_BUFFER_ADDR(x, y)] = data;
 
 #if 0
     Serial.print(" after: ");
