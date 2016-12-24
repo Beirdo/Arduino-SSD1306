@@ -261,7 +261,7 @@ void SSD1306::drawPixel(int16_t x, int16_t y, uint16_t color) {
 
   // x is which column
   getCacheLine(x, y);
-  uint8_t data = m_buffer[SSD1306_PIXEL_ADDR(x, y)];
+  uint8_t data = m_buffer[SSD1306_BUFFER_ADDR(x, y)];
   uint8_t mask = (1 << (y & 0x07));
   
 #if 0
