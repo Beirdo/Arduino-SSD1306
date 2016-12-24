@@ -46,7 +46,7 @@ All text above, and the splash screen below must be included in any redistributi
 // the memory buffer for the LCD
 // Move the initial logo display into FLASH
 
-const PROGMEM uint8_t lcd_logo[SSD1306_LCDHEIGHT * SSD1306_LCDWIDTH / 8] = {
+const PROGMEM uint8_t lcd_logo[SSD1306_RAM_MIRROR_SIZE] = {
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -126,8 +126,25 @@ void SSD1306::initializeLogo(void)
   }
   
   for (uint16_t i = 0; i < SSD1306_RAM_MIRROR_SIZE; i += SSD1306_BUFFER_SIZE) {
-    memcpy_P(m_buffer, &lcd_logo[i], SSD1306_BUFFER_SIZE);
+    memcpy_P(m_buffer, lcd_logo + i, SSD1306_BUFFER_SIZE);
+#if 0
+    Serial.print("Logo  i: ");
+    Serial.print(i, HEX);
+    Serial.print(" addr: ");
+    Serial.println(m_logo_addr + i, HEX);
+#endif
+    m_fram->writeEnable(true);
     m_fram->write(m_logo_addr + i, m_buffer, SSD1306_BUFFER_SIZE);
+#if 0
+    for (uint8_t j = 0; j < SSD1306_BUFFER_SIZE; j++) {
+      Serial.print(m_buffer[j], HEX);
+      if ((j & 0x0F) == 0x0F) {
+        Serial.println("");
+      } else {
+        Serial.print(" ");
+      }
+    }
+#endif
   }
 }
 
@@ -145,23 +162,43 @@ void SSD1306::attachRAM(Adafruit_FRAM_SPI *fram, uint16_t buffer,
 
 void SSD1306::getCacheLine(int16_t x, int16_t y)
 {
-  uint16_t addr = SSD1306_PIXEL_ADDR(x, y);
-  if (addr == m_cache_address) {
-    return;
-  }
+  (void)x;
+  uint16_t addr = SSD1306_PIXEL_ADDR(0, y);
+  if (!m_show_logo) {
+    if (addr == m_cache_address) {
+      return;
+    }
 
-  if (!m_cache_clean) {
-    flushCacheLine();
+    if (!m_cache_clean) {
+      flushCacheLine();
+    }
   }
   
-  getCacheLine(addr, false);
-}
+  uint16_t baseAddr = (m_show_logo ? m_logo_addr : m_buffer_addr);
 
-void SSD1306::getCacheLine(int16_t addr, bool is_logo)
-{
-  uint16_t baseAddr = (is_logo ? m_logo_addr : m_buffer_addr);
+#if 0
+  Serial.print("Reading: ");
+  Serial.println(baseAddr + addr, HEX);
+#endif
 
-  m_fram->read(baseAddr + addr, m_buffer, SSD1306_BUFFER_SIZE);
+  bool empty = !(!(m_pages_empty & SSD1306_PAGE_BIT(y)));
+
+  if (!empty) {
+    m_fram->read(baseAddr + addr, m_buffer, SSD1306_BUFFER_SIZE);
+  } else {
+    memset(m_buffer, 0x00, SSD1306_BUFFER_SIZE);
+  }
+
+#if 0
+  for (uint8_t i = 0; i < SSD1306_BUFFER_SIZE; i++) {
+    Serial.print(m_buffer[i], HEX);
+    if ((i & 0x0F) == 0x0F) {
+      Serial.println("");
+    } else {
+      Serial.print(" ");
+    }
+  }
+#endif
   m_cache_address = addr;
   m_cache_clean = true;
 }
@@ -171,7 +208,23 @@ void SSD1306::flushCacheLine(void)
   if (m_show_logo) {
     return;
   }
-  m_fram->write(m_cache_address + m_buffer_addr, m_buffer, SSD1306_BUFFER_SIZE);
+#if 0
+  Serial.print("Writing: ");
+  Serial.println(m_buffer_addr + m_cache_address, HEX);
+#endif
+
+  m_fram->writeEnable(true);
+  m_fram->write(m_buffer_addr + m_cache_address, m_buffer, SSD1306_BUFFER_SIZE);
+#if 0
+  for (uint8_t i = 0; i < SSD1306_BUFFER_SIZE; i++) {
+    Serial.print(m_buffer[i], HEX);
+    if ((i & 0x0F) == 0x0F) {
+      Serial.println("");
+    } else {
+      Serial.print(" ");
+    }
+  }
+#endif
   m_cache_clean = true;
 }
 
@@ -201,6 +254,20 @@ void SSD1306::drawPixel(int16_t x, int16_t y, uint16_t color) {
   uint8_t data = m_buffer[x];
   uint8_t mask = (1 << (y & 0x07));
   
+#if 0
+  Serial.print("PIXEL ");
+  Serial.print("X: ");
+  Serial.print(x, DEC);
+  Serial.print(" Y: ");
+  Serial.print(y, DEC);
+  Serial.print(" data: ");
+  Serial.print(data, HEX);
+  Serial.print(" mask: ");
+  Serial.print(mask, HEX);
+  Serial.print(" color: ");
+  Serial.print(color, DEC);
+#endif
+
   switch (color)
   {
     case WHITE:   
@@ -216,6 +283,12 @@ void SSD1306::drawPixel(int16_t x, int16_t y, uint16_t color) {
       return;
   }
   m_buffer[x] = data;
+#if 0
+  Serial.print(" data: ");
+  Serial.println(data, HEX);
+#endif
+  m_cache_clean = false;
+  m_pages_empty &= ~SSD1306_PAGE_BIT(y);
 }
 
 SSD1306::SSD1306(uint8_t i2caddr) :
@@ -414,44 +487,56 @@ void SSD1306::display(void) {
 
   ssd1306_command(SSD1306_PAGEADDR);
   ssd1306_command(0); // Page start address (0 = reset)
-#if SSD1306_LCDHEIGHT == 64
-  ssd1306_command(7); // Page end address
-#elif SSD1306_LCDHEIGHT == 32
-  ssd1306_command(3); // Page end address
-#elif SSD1306_LCDHEIGHT == 16
-  ssd1306_command(1); // Page end address
-#endif
+  ssd1306_command((SSD1306_LCDHEIGHT >> 3) - 1); // Page end address
 
-  Wire.setClock(400000);
+  //TWBR = 12; // upgrade to 400KHz!
 
   if (!m_cache_clean) {
     flushCacheLine();
   }
 
+#if 0
+  Serial.println("Display");
+#endif
+
   for (int16_t y = 0; y < SSD1306_LCDHEIGHT; y += 8) {
     bool empty = !(!(m_pages_empty & SSD1306_PAGE_BIT(y)));
     if (!empty) {
-      getCacheLine(y, m_show_logo);
+      getCacheLine(0, y);
     }
 
     for (uint8_t x = 0; x < SSD1306_BUFFER_SIZE; x += 16) {
       // send a bunch of data in one transmission
+#if 0
+      Serial.print("X: ");
+      Serial.println(x, HEX);
+#endif
+      Wire.setClock(400000);
       Wire.beginTransmission(m_i2caddr);
-      WIRE_WRITE(0x40);
+      Wire.write(0x40);
       for (uint8_t i = 0; i < 16; i++) {
-        WIRE_WRITE(empty ? 0x00 : m_buffer[x + i]);
+	uint8_t data = (empty ? 0x00 : m_buffer[x + i]);
+#if 0
+	Serial.print(data, HEX);
+	Serial.print(" ");
+#endif
+        Wire.write(data);
       }
       Wire.endTransmission();
+#if 0
+      Serial.println("");
+#endif
     }
   }
 
   if (m_show_logo) {
-    m_show_logo = false;
+    clearDisplay();
   }
 }
 
 // clear everything
 void SSD1306::clearDisplay(void) {
+  m_show_logo = false;
   m_pages_empty = 0xFF;
   m_cache_clean = true;
   m_cache_address = 0xFFFF;
@@ -514,13 +599,33 @@ void SSD1306::drawFastHLineInternal(int16_t x, int16_t y, int16_t w, uint16_t co
   }
 
   getCacheLine(x, y);
-  register uint8_t mask = 1 << (y & 0x07);
+  register uint8_t mask = SSD1306_PIXEL_MASK(y);
 
   if (color == BLACK) {
     mask = ~mask;
   }
 
+#if 0
+  Serial.print("HLINE ");
+  Serial.print("X: ");
+  Serial.print(x, DEC);
+  Serial.print(" W: ");
+  Serial.print(w, DEC);
+  Serial.print(" Y: ");
+  Serial.print(y, DEC);
+  Serial.print(" mask: ");
+  Serial.print(mask, HEX);
+  Serial.print(" color: ");
+  Serial.println(color, DEC);
+#endif
+
   for (uint8_t i = x; i < x + w; i++) {
+#if 0
+    Serial.print("i :");
+    Serial.print(i, DEC);
+    Serial.print(" before: ");
+    Serial.print(m_buffer[i], HEX);
+#endif
     switch (color)
     {
       case WHITE:
@@ -535,7 +640,13 @@ void SSD1306::drawFastHLineInternal(int16_t x, int16_t y, int16_t w, uint16_t co
       default:
         return;
     }
+#if 0
+    Serial.print(" after: ");
+    Serial.println(m_buffer[i], HEX);
+#endif
   }
+  m_cache_clean = false;
+  m_pages_empty &= ~SSD1306_PAGE_BIT(y);
 }
 
 void SSD1306::drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) {
@@ -622,7 +733,28 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
       mask &= (0xFF >> (mod-h));
     }
 
+#if 0
+    Serial.print("VLINE A  ");
+    Serial.print("X: ");
+    Serial.print(x, DEC);
+    Serial.print(" Y: ");
+    Serial.print(y, DEC);
+    Serial.print(" H: ");
+    Serial.print(h, DEC);
+    Serial.print(" mod: ");
+    Serial.print(mod, DEC);
+    Serial.print(" mask: ");
+    Serial.print(mask, HEX);
+    Serial.print(" color: ");
+    Serial.print(color, DEC);
+#endif
+
     data = m_buffer[x];
+
+#if 0
+    Serial.print(" before: ");
+    Serial.print(data, HEX);
+#endif
 
     switch (color)
     {
@@ -639,7 +771,14 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
         return;
     }
 
+#if 0
+    Serial.print(" after: ");
+    Serial.println(data, HEX);
+#endif
+
     m_buffer[x] = data;
+    m_cache_clean = false;
+    m_pages_empty &= ~SSD1306_PAGE_BIT(y);
 
     // fast exit if we're done here!
     if (h < mod) {
@@ -667,12 +806,35 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
       } while (h >= 8);
     } else {
       // store a local value to work with
-      data = (color == WHITE) ? 255 : 0;
+      data = (color == WHITE) ? 0xFF : 0;
 
       do  {
         // write our value in
         getCacheLine(x, y);
+
+#if 0
+        Serial.print("VLINE B  ");
+        Serial.print("X: ");
+        Serial.print(x, DEC);
+        Serial.print(" Y: ");
+        Serial.print(y, DEC);
+        Serial.print(" H: ");
+        Serial.print(h, DEC);
+        Serial.print(" color: ");
+        Serial.print(color, DEC);
+        Serial.print(" before: ");
+        Serial.print(m_buffer[x], HEX);
+#endif
+
         m_buffer[x] = data;
+
+#if 0
+        Serial.print(" after: ");
+        Serial.println(m_buffer[x], HEX);
+#endif
+
+        m_cache_clean = false;
+        m_pages_empty &= ~SSD1306_PAGE_BIT(y);
 
         // adjust h & y (there's got to be a faster way for me to do this, but
         // this should still help a fair bit for now)
@@ -695,7 +857,30 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
     register uint8_t mask = postmask[mod];
 
     getCacheLine(x, y);
+
+#if 0
+    Serial.print("VLINE C  ");
+    Serial.print("X: ");
+    Serial.print(x, DEC);
+    Serial.print(" Y: ");
+    Serial.print(y, DEC);
+    Serial.print(" H: ");
+    Serial.print(h, DEC);
+    Serial.print(" mod: ");
+    Serial.print(mod, DEC);
+    Serial.print(" mask: ");
+    Serial.print(mask, HEX);
+    Serial.print(" color: ");
+    Serial.print(color, DEC);
+#endif
+
     data = m_buffer[x];
+
+#if 0
+    Serial.print(" before: ");
+    Serial.print(data, HEX);
+#endif
+
     switch (color)
     {
       case WHITE:
@@ -709,5 +894,13 @@ void SSD1306::drawFastVLineInternal(int16_t x, int16_t __y, int16_t __h, uint16_
         break;
     }
     m_buffer[x] = data;
+
+#if 0
+    Serial.print(" after: ");
+    Serial.println(data, HEX);
+#endif
+
+    m_cache_clean = false;
+    m_pages_empty &= ~SSD1306_PAGE_BIT(y);
   }
 }
