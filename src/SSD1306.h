@@ -171,21 +171,20 @@ class SSD1306 : public Adafruit_GFX {
 
   void ssd1306_command(uint8_t c);
 
-  void getCacheLine(int16_t x, int16_t y);
-  void flushCacheLine(void);
+  uint8_t readCache(int16_t x, int16_t y);
+  void writeCache(int16_t x, int16_t y, uint8_t value);
+  void operCache(int16_t x, int16_t y, oper_t oper_, uint8_t mask);
+
+  uint16_t getPixelAddress(int16_t x, int16_t y);
 
   int8_t m_i2caddr;
   int8_t m_vccstate;
 
-  Adafruit_FRAM_SPI *m_fram;
-  uint16_t m_buffer_addr;
-  uint16_t m_logo_addr;
-  bool m_show_logo;
+  Cache_Segment *m_logo_cache;
+  Cache_Segment *m_draw_cache;
 
-  volatile uint8_t m_buffer[SSD1306_BUFFER_SIZE * 2];
-  uint8_t m_pages_empty;
-  bool m_cache_clean;
-  uint16_t m_cache_address;
+  Adafruit_FRAM_SPI *m_fram;
+  bool m_show_logo;
 };
 
 #endif /* _SSD1306_H_ */
