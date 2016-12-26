@@ -39,9 +39,10 @@ All text above, and the splash screen below must be included in any redistributi
 #include <stdlib.h>
 
 #include <Wire.h>
-#include "Adafruit_GFX.h"
+#include <Adafruit_GFX.h>
 #include "SSD1306.h"
-#include "Adafruit_FRAM_SPI.h"
+#include <Adafruit_FRAM_SPI.h>
+#include <FRAM_Cache.h>
 
 // the memory buffer for the LCD
 // Move the initial logo display into FLASH
@@ -124,15 +125,16 @@ Adafruit_GFX(SSD1306_LCDWIDTH, SSD1306_LCDHEIGHT) {
   m_i2caddr = i2caddr;
   m_fram = NULL;
   m_logo_cache = NULL;
-  m_buffer_cache = NULL;
+  m_draw_cache = NULL;
 }
 
 void SSD1306::attachRAM(Adafruit_FRAM_SPI *fram, uint16_t buffer,
                                  uint16_t logo)
 {
   m_fram = fram;
-  m_draw_cache = new Cache_Segment(fram, logo, SSD1306_RAM_MIRROR_SIZE,
+  m_draw_cache = new Cache_Segment(fram, buffer, SSD1306_RAM_MIRROR_SIZE,
                                    2 * SSD1306_BUFFER_SIZE,
+                                   SSD1306_BUFFER_SIZE);
   m_logo_cache = new Cache_Segment(fram, logo, SSD1306_RAM_MIRROR_SIZE,
                                    2 * SSD1306_BUFFER_SIZE,
                                    SSD1306_BUFFER_SIZE,
@@ -154,6 +156,7 @@ void SSD1306::initializeLogo(void)
     m_logo_cache->write(i, ch);
   }
 
+  m_logo_cache->flushCacheLine();
   m_logo_cache->setWriteProtect(true);
 }
 
