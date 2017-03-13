@@ -501,13 +501,13 @@ void SSD1306::drawFastHLineInternal(int16_t x, int16_t y, int16_t w, uint16_t co
     switch (color)
     {
       case WHITE:
-        operCache(x, y, SET_BITS, mask);
+        operCache(i, y, SET_BITS, mask);
         break;
       case BLACK:
-        operCache(x, y, CLEAR_BITS, mask);
+        operCache(i, y, CLEAR_BITS, mask);
         break;
       case INVERSE:
-        operCache(x, y, TOGGLE_BITS, mask);
+        operCache(i, y, TOGGLE_BITS, mask);
         break;
       default:
         return;
